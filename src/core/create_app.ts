@@ -51,7 +51,7 @@ export function create_serviceworker_manifest({ manifest_data, output, client_fi
 	} else {
 		// TODO remove in a future version
 		if (fs.existsSync('assets')) {
-			throw new Error(`As of Sapper 0.21, the assets/ directory should become static/`);
+			throw new Error('As of Sapper 0.21, the assets/ directory should become static/');
 		}
 	}
 
@@ -102,8 +102,7 @@ function generate_client_manifest(
 			component_indexes[component.name] = i;
 
 			return `{
-					js: () => import(${annotation}${stringify(source)}),
-					css: "__SAPPER_CSS_PLACEHOLDER:${stringify(component.file, false)}__"
+					js: () => import(${annotation}${stringify(source)})
 				}`;
 		}).join(',\n\t\t\t\t')}
 	]`.replace(/^\t/gm, '');
@@ -178,9 +177,6 @@ function generate_server_manifest(
 		component_lookup[component.name] = i;
 	});
 
-	const code = `
-		`.replace(/^\t\t/gm, '').trim();
-
 	const build_dir = posixify(path.normalize(path.relative(cwd, dest)));
 	const src_dir = posixify(path.normalize(path.relative(cwd, src)));
 
@@ -198,7 +194,7 @@ function generate_server_manifest(
 					handlers: route_${i},
 					params: ${route.params.length > 0
 						? `match => ({ ${route.params.map(create_param_match).join(', ')} })`
-						: `() => ({})`}
+						: '() => ({})'}
 				}`).join(',\n\n\t\t\t\t')}
 			],
 

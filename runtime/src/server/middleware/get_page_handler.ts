@@ -1,17 +1,27 @@
 import { writable } from 'svelte/store';
 import fs from 'fs';
 import path from 'path';
-import cookie from 'cookie';
+import { parse } from 'cookie';
 import devalue from 'devalue';
 import fetch from 'node-fetch';
 import URL from 'url';
 import { sourcemap_stacktrace } from './sourcemap_stacktrace';
-import { Manifest, ManifestPage, Req, Res, build_dir, dev, src_dir } from '@sapper/internal/manifest-server';
+import {
+    Manifest,
+    ManifestPage,
+    SapperRequest,
+    SapperResponse,
+    build_dir,
+    dev,
+    src_dir
+} from '@sapper/internal/manifest-server';
 import App from '@sapper/internal/App.svelte';
+import { PageContext, PreloadResult } from '@sapper/common';
+import detectClientOnlyReferences from './detect_client_only_references';
 
 export function get_page_handler(
 	manifest: Manifest,
-	session_getter: (req: Req, res: Res) => Promise<any>
+	session_getter: (req: SapperRequest, res: SapperResponse) => Promise<any>
 ) {
 	const get_build_info = dev
 		? () => JSON.parse(fs.readFileSync(path.join(build_dir, 'build.json'), 'utf-8'))
@@ -25,65 +35,63 @@ export function get_page_handler(
 
 	const { pages, error: error_route } = manifest;
 
-	function bail(req: Req, res: Res, err: Error) {
+	function bail(res: SapperResponse, err: Error | string) {
 		console.error(err);
 
-		const message = dev ? escape_html(err.message) : 'Internal server error';
+		const message = dev ? escape_html(typeof err === 'string' ? err : err.message) : 'Internal server error';
 
 		res.statusCode = 500;
 		res.end(`<pre>${message}</pre>`);
 	}
 
-	function handle_error(req: Req, res: Res, statusCode: number, error: Error | string) {
+	function handle_error(req: SapperRequest, res: SapperResponse, statusCode: number, error: Error | string) {
 		handle_page({
 			pattern: null,
 			parts: [
 				{ name: null, component: { default: error_route } }
 			]
-		}, req, res, statusCode, error || new Error('Unknown error in preload function'));
+		}, req, res, statusCode, error || 'Unknown error');
 	}
 
-	async function handle_page(page: ManifestPage, req: Req, res: Res, status = 200, error: Error | string = null) {
+	async function handle_page(
+        page: ManifestPage,
+        req: SapperRequest,
+        res: SapperResponse,
+        status = 200,
+        error: Error | string = null) {
 		const is_service_worker_index = req.path === '/service-worker-index.html';
 		const build_info: {
 			bundler: 'rollup' | 'webpack',
 			shimport: string | null,
 			assets: Record<string, string | string[]>,
 			dependencies: Record<string, string[]>,
-			css: {
-				main: string | null,
-				chunks: Record<string, string[]>
-			},
+			css?: { main: string[] },
 			legacy_assets?: Record<string, string>
 		} = get_build_info();
 
 		res.setHeader('Content-Type', 'text/html');
 
-		// preload main.js and current route
+		// preload main js and css
 		// TODO detect other stuff we can preload like fonts?
 		let preload_files = Array.isArray(build_info.assets.main) ? build_info.assets.main : [build_info.assets.main];
-		if (!error && !is_service_worker_index) {
-			page.parts.forEach(part => {
-				if (!part) return;
-
-				// using concat because it could be a string or an array. thanks webpack!
-				preload_files = preload_files.concat(build_info.assets[part.name]);
-			});
+		if (build_info?.css?.main) {
+			preload_files = preload_files.concat(build_info?.css?.main);
 		}
 
 		let es6_preload = false;
 		if (build_info.bundler === 'rollup') {
-
 			es6_preload = true;
-
 			const route = page.parts[page.parts.length - 1].file;
-
-			// JS
-			preload_files = preload_files.concat(build_info.dependencies[route]);
-
-			// CSS
-			preload_files = preload_files.concat(build_info.css.main);
-			preload_files = preload_files.concat(build_info.css.chunks[route]);
+			const deps = build_info.dependencies[route];
+			if (deps) {
+				preload_files = preload_files.concat(deps);
+			}
+		} else if (!error && !is_service_worker_index) {
+			page.parts.forEach(part => {
+				if (!part) return;
+				// using concat because it could be a string or an array. thanks webpack!
+				preload_files = preload_files.concat(build_info.assets[part.name]);
+			});
 		}
 
 		const link = preload_files
@@ -102,7 +110,7 @@ export function get_page_handler(
 		try {
 			session = await session_getter(req, res);
 		} catch (err) {
-			return bail(req, res, err);
+			return bail(res, err);
 		}
 
 		let redirect: { statusCode: number, location: string };
@@ -111,7 +119,7 @@ export function get_page_handler(
 		const preload_context = {
 			redirect: (statusCode: number, location: string) => {
 				if (redirect && (redirect.statusCode !== statusCode || redirect.location !== location)) {
-					throw new Error(`Conflicting redirects`);
+					throw new Error('Conflicting redirects');
 				}
 				location = location.replace(/^\//g, ''); // leading slash (only)
 				redirect = { statusCode, location };
@@ -135,14 +143,14 @@ export function get_page_handler(
 
 					const cookies = Object.assign(
 						{},
-						cookie.parse(req.headers.cookie || ''),
-						cookie.parse(opts.headers.cookie || '')
+						parse(req.headers.cookie || ''),
+						parse(opts.headers.cookie || '')
 					);
 
 					const set_cookie = res.getHeader('Set-Cookie');
-					(Array.isArray(set_cookie) ? set_cookie : [set_cookie]).forEach(str => {
-						const match = /([^=]+)=([^;]+)/.exec(<string>str);
-						if (match) cookies[match[1]] = match[2];
+					(Array.isArray(set_cookie) ? set_cookie : [set_cookie]).forEach((s: string) => {
+						const m = /([^=]+)=([^;]+)/.exec(s);
+						if (m) cookies[m[1]] = m[2];
 					});
 
 					const str = Object.keys(cookies)
@@ -160,23 +168,28 @@ export function get_page_handler(
 			}
 		};
 
-		let preloaded;
-		let match;
-		let params;
+		let preloaded: object[];
+		let match: RegExpExecArray;
+		let params: Record<string,string>;
 
 		try {
 			const root_preload = manifest.root_comp.preload || (() => {});
-			const root_preloaded = root_preload.call(preload_context, {
-					host: req.headers.host,
-					path: req.path,
-					query: req.query,
-					params: {}
-				}, session);
+			const root_preloaded: PreloadResult = detectClientOnlyReferences(() =>
+				root_preload.call(
+					preload_context,
+					{
+						host: req.headers.host,
+						path: req.path,
+						query: req.query,
+						params: {}
+					},
+					session
+				)
+			);
 
 			match = error ? null : page.pattern.exec(req.path);
 
-
-			let toPreload = [root_preloaded];
+			let toPreload: PreloadResult[] = [root_preloaded];
 			if (!is_service_worker_index) {
 				toPreload = toPreload.concat(page.parts.map(part => {
 					if (!part) return null;
@@ -185,12 +198,18 @@ export function get_page_handler(
 					params = part.params ? part.params(match) : {};
 
 					return part.component.preload
-						? part.component.preload.call(preload_context, {
-							host: req.headers.host,
-							path: req.path,
-							query: req.query,
-							params
-						}, session)
+						? detectClientOnlyReferences(() =>
+								part.component.preload.call(
+									preload_context,
+									{
+										host: req.headers.host,
+										path: req.path,
+										query: req.query,
+										params
+									},
+									session
+								)
+						  )
 						: {};
 				}));
 			}
@@ -198,7 +217,7 @@ export function get_page_handler(
 			preloaded = await Promise.all(toPreload);
 		} catch (err) {
 			if (error) {
-				return bail(req, res, err);
+				return bail(res, err);
 			}
 
 			preload_error = { statusCode: 500, message: err };
@@ -217,7 +236,12 @@ export function get_page_handler(
 			}
 
 			if (preload_error) {
-				handle_error(req, res, preload_error.statusCode, preload_error.message);
+				if (!error) {
+					handle_error(req, res, preload_error.statusCode, preload_error.message);
+				} else {
+					bail(res, preload_error.message);
+				}
+
 				return;
 			}
 
@@ -237,15 +261,22 @@ export function get_page_handler(
 				error.stack = sourcemap_stacktrace(error.stack);
 			}
 
+			const pageContext: PageContext = {
+				host: req.headers.host,
+				path: req.path,
+				query: req.query,
+				params,
+				error: error
+					? error instanceof Error
+						? error
+						: { message: error, name: 'PreloadError' }
+					: null
+			};
+
 			const props = {
 				stores: {
 					page: {
-						subscribe: writable({
-							host: req.headers.host,
-							path: req.path,
-							query: req.query,
-							params
-						}).subscribe
+						subscribe: writable(pageContext).subscribe
 					},
 					preloading: {
 						subscribe: writable(null).subscribe
@@ -254,7 +285,7 @@ export function get_page_handler(
 				},
 				segments: layout_segments,
 				status: error ? status : 200,
-				error: error ? error instanceof Error ? error : { message: error } : null,
+				error: pageContext.error,
 				level0: {
 					props: preloaded[0]
 				},
@@ -265,12 +296,12 @@ export function get_page_handler(
 			};
 
 			if (!is_service_worker_index) {
-				let l = 1;
+				let level_index = 1;
 				for (let i = 0; i < page.parts.length; i += 1) {
 					const part = page.parts[i];
 					if (!part) continue;
 
-					props[`level${l++}`] = {
+					props[`level${level_index++}`] = {
 						component: part.component.default,
 						props: preloaded[i + 1] || {},
 						segment: segments[i]
@@ -278,7 +309,7 @@ export function get_page_handler(
 				}
 			}
 
-			const { html, head, css } = App.render(props);
+			const { html, head, css } = detectClientOnlyReferences(() => App.render(props));
 
 			const serialized = {
 				preloaded: `[${preloaded.map(data => try_serialize(data, err => {
@@ -302,11 +333,12 @@ export function get_page_handler(
 				script += `if('serviceWorker' in navigator)navigator.serviceWorker.register('${req.baseUrl}/service-worker.js');`;
 			}
 
-			const file = [].concat(build_info.assets.main).filter(file => file && /\.js$/.test(file))[0];
+			const file = [].concat(build_info.assets.main).filter(f => f && /\.js$/.test(f))[0];
 			const main = `${req.baseUrl}/client/${file}`;
 
 			// users can set a CSP nonce using res.locals.nonce
-			const nonce_attr = (res.locals && res.locals.nonce) ? ` nonce="${res.locals.nonce}"` : '';
+			const nonce_value = (res.locals && res.locals.nonce) ? res.locals.nonce : '';
+			const nonce_attr = nonce_value ? ` nonce="${nonce_value}"` : '';
 
 			if (build_info.bundler === 'rollup') {
 				if (build_info.legacy_assets) {
@@ -324,14 +356,13 @@ export function get_page_handler(
 			// TODO make this consistent across apps
 			// TODO embed build_info in placeholder.ts
 			if (build_info.css && build_info.css.main) {
-				const css_chunks = new Set();
-				if (build_info.css.main) css_chunks.add(build_info.css.main);
+				const css_chunks = new Set(build_info.css.main);
 				page.parts.forEach(part => {
-					if (!part) return;
-					const css_chunks_for_part = build_info.css.chunks[part.file];
+					if (!part || !build_info.dependencies) return;
+					const deps_for_part = build_info.dependencies[part.file];
 
-					if (css_chunks_for_part) {
-						css_chunks_for_part.forEach(chunk => {
+					if (deps_for_part) {
+						deps_for_part.filter(d => d.endsWith('.css')).forEach(chunk => {
 							css_chunks.add(chunk);
 						});
 					}
@@ -341,7 +372,7 @@ export function get_page_handler(
 					.map(href => `<link rel="stylesheet" href="client/${href}">`)
 					.join('');
 			} else {
-				styles = (css && css.code ? `<style>${css.code}</style>` : '');
+				styles = (css && css.code ? `<style${nonce_attr}>${css.code}</style>` : '');
 			}
 
 			const body = template()
@@ -349,34 +380,30 @@ export function get_page_handler(
 				.replace('%sapper.scripts%', () => `<script${nonce_attr}>${script}</script>`)
 				.replace('%sapper.html%', () => html)
 				.replace('%sapper.head%', () => head)
-				.replace('%sapper.styles%', () => styles);
+				.replace('%sapper.styles%', () => styles)
+				.replace(/%sapper\.cspnonce%/g, () => nonce_value);
 
 			res.statusCode = status;
 			res.end(body);
 		} catch (err) {
 			if (error) {
-				bail(req, res, err);
+				bail(res, err);
 			} else {
 				handle_error(req, res, 500, err);
 			}
 		}
 	}
 
-	return function find_route(req: Req, res: Res, next: () => void) {
-		if (req.path === '/service-worker-index.html') {
-			const homePage = pages.find(page => page.pattern.test('/'));
-			handle_page(homePage, req, res);
-			return;
-		}
+	return function find_route(req: SapperRequest, res: SapperResponse, next: () => void) {
+		const req_path = req.path === '/service-worker-index.html' ? '/' : req.path;
 
-		for (const page of pages) {
-			if (page.pattern.test(req.path)) {
-				handle_page(page, req, res);
-				return;
-			}
-		}
+		const page = pages.find(p => p.pattern.test(req_path));
 
-		handle_error(req, res, 404, 'Not found');
+		if (page) {
+			handle_page(page, req, res);
+		} else {
+			handle_error(req, res, 404, 'Not found');
+		}
 	};
 }
 
@@ -384,7 +411,7 @@ function read_template(dir = build_dir) {
 	return fs.readFileSync(`${dir}/template.html`, 'utf-8');
 }
 
-function try_serialize(data: any, fail?: (err) => void) {
+function try_serialize(data: any, fail?: (err: Error) => void) {
 	try {
 		return devalue(data);
 	} catch (err) {
@@ -394,7 +421,7 @@ function try_serialize(data: any, fail?: (err) => void) {
 }
 
 // Ensure we return something truthy so the client will not re-render the page over the error
-function serialize_error(error: Error | { message: string }) {
+function serialize_error(error: Error) {
 	if (!error) return null;
 	let serialized = try_serialize(error);
 	if (!serialized) {
@@ -410,7 +437,7 @@ function serialize_error(error: Error | { message: string }) {
 function escape_html(html: string) {
 	const chars: Record<string, string> = {
 		'"' : 'quot',
-		"'": '#39',
+		'\'': '#39',
 		'&': 'amp',
 		'<' : 'lt',
 		'>' : 'gt'

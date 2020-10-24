@@ -4,7 +4,22 @@ export interface HydratedTarget {
 	redirect?: Redirect;
 	preload_error?: any;
 	props: any;
-	branch: Array<{ Component: DOMComponentConstructor, preload: (page) => Promise<any>, segment: string }>;
+	branch: Branch;
+}
+
+export type Branch = Array<{
+	segment: string;
+	match?: RegExpExecArray;
+	component?: DOMComponentConstructor;
+	part?: number;
+}>;
+
+export type InitialData = {
+	session: any;
+	preloaded?: object[];
+	status: number;
+	error: Error;
+	baseUrl: string;
 }
 
 export interface ScrollPosition {

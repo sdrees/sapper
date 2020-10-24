@@ -115,6 +115,15 @@ export async function get(req, res, next) {
 
 > `delete` is a reserved word in JavaScript. To handle DELETE requests, export a function called `del` instead.
 
+If you are using TypeScript, use the following types:
+
+```js
+import { SapperRequest, SapperResponse } from '@sapper/server';
+
+function get(req: SapperRequest, res: SapperResponse, next: () => void) { ... }
+```
+
+`SapperRequest` and `SapperResponse` will work with both Polka and Express. You can replace them with the types specific to your server, which are `polka.Request` / `http.ServerResponse` and `express.Request` / `express.Response`, respectively.
 
 ### File naming rules
 
@@ -130,7 +139,7 @@ There are three simple rules for naming the files that define your routes:
 
 In addition to regular pages, there is a 'special' page that Sapper expects to find — `src/routes/_error.svelte`. This will be shown when an error occurs while rendering a page.
 
-The `error` object is made available to the template along with the HTTP `status` code.
+The `error` object is made available to the template along with the HTTP `status` code. `error` is also available in the [`page` store](docs#Stores).
 
 
 
