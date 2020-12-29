@@ -1,9 +1,13 @@
 # sapper changelog
 
-## Unreleased
+## 0.29.0 - Unreleased
 
-* Fix dynamic imports in Rollup entry chunk ([#1595](https://github.com/sveltejs/sapper/issues/1595))
-* Remove duplicate TypeScript module definitions ([#1598](https://github.com/sveltejs/sapper/issues/1598))
+Please see the [migration guide](https://sapper.svelte.dev/migrating#0_28_to_0_29) for details on migrating from Sapper 0.28 to Sapper 0.29.
+
+* Avoid error in scroll tracking when navigating off-site and then going back ([#1592](https://github.com/sveltejs/sapper/issues/1592))
+* Fix runtime router handling of encoded query parameters ([#1620](https://github.com/sveltejs/sapper/pull/1620))
+* Fix prefetching when clicking quickly back and forth ([#1668](https://github.com/sveltejs/sapper/issues/1668)) 
+* Numerous TypeScript definition improvements ([#1598](https://github.com/sveltejs/sapper/issues/1598), [#1601](https://github.com/sveltejs/sapper/issues/1601), [#1603](https://github.com/sveltejs/sapper/issues/1603), [#1604](https://github.com/sveltejs/sapper/issues/1604))
 
 ## 0.28.10
 

@@ -4,9 +4,9 @@ title: Preloading
 
 Page components can define a `preload` function that runs before the component is created. The values it returns are passed as props to the page.
 
-Preload functions are typically used to load data that the page depends on, hence its name. This avoids the user seeing the page update as it loads, as is typically the case with client-side loading.
+`preload` functions are called when a page is loaded and are typically used to load data that the page depends on - hence its name. This avoids the user seeing the page update as it loads, as is typically the case with client-side loading.
 
-Preload is the Sapper equivalent to `getInitialProps` in Next.js or `asyncData` in Nuxt.js.
+`preload` is the Sapper equivalent to `getInitialProps` in Next.js or `asyncData` in Nuxt.js.
 
 Note that `preload` will run both on the server side and on the client side. It may therefore not reference any APIs only present in the browser.
 
@@ -134,7 +134,7 @@ You can abort rendering and redirect to a different location with `this.redirect
 
 #### Typing the function
 
-If you use TypeScript and want to access the above context methods, TypeScript will thow an error and tell you that it does not know the type of `this`. To fix it, you need to specify the type of `this` (see the [official TypeScript documentation](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-2-0.html#specifying-the-type-of-this-for-functions)). We provide you with helper interfaces so you can type the function like this:
+If you use TypeScript and want to access the above context methods, TypeScript will throw an error and tell you that it does not know the type of `this`. To fix it, you need to specify the type of `this` (see the [official TypeScript documentation](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-2-0.html#specifying-the-type-of-this-for-functions)). We provide you with helper interfaces so you can type the function like this:
 
 ```html
 <script context="module">

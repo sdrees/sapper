@@ -155,7 +155,7 @@ export default class RollupCompiler {
 		const that = this;
 
 		// TODO this is hacky. refactor out into an external rollup plugin
-		(mod.plugins || (mod.plugins = [])).push(css_chunks({ injectImports: true }));
+		(mod.plugins || (mod.plugins = [])).push(css_chunks());
 		if (!/[\\/]client\./.test(entry_point)) {
 			return mod;
 		}
@@ -222,7 +222,7 @@ export default class RollupCompiler {
 
 						if (chunk_has_css) {
 							has_css = true;
-							chunk.code = `import __inject_styles from './${inject_styles_file}';\n` + chunk.code;
+							chunk.code += `\nimport __inject_styles from './${inject_styles_file}';`;
 						}
 					}
 				}
