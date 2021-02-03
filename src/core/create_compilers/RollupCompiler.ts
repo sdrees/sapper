@@ -21,6 +21,12 @@ const INJECT_STYLES_ID = 'inject_styles.js';
 
 let rollup: any;
 
+function printTimings(timings: {[event: string]: [number, number, number]}) {
+	for (const [key, info] of Object.entries(timings)) {
+		console.info(`${key} took ${info[0].toFixed(0)}ms`);
+	}
+}
+
 const inject_styles = `
 export default function(files) {
 	return Promise.all(files.map(function(file) { return new Promise(function(fulfil, reject) {
@@ -155,7 +161,9 @@ export default class RollupCompiler {
 		const that = this;
 
 		// TODO this is hacky. refactor out into an external rollup plugin
-		(mod.plugins || (mod.plugins = [])).push(css_chunks());
+		(mod.plugins || (mod.plugins = [])).push(css_chunks({
+			entryFileNames: '[name]-[hash].css'
+		}));
 		if (!/[\\/]client\./.test(entry_point)) {
 			return mod;
 		}
@@ -319,7 +327,9 @@ export default class RollupCompiler {
 		try {
 			const bundle = await rollup.rollup(config);
 			await bundle.write(config.output);
-
+			if (bundle.getTimings != null) {
+				printTimings(bundle.getTimings());
+			}
 			return new RollupResult(Date.now() - start, this, sourcemap);
 		} catch (err) {
 			// flush warnings
@@ -373,6 +383,9 @@ export default class RollupCompiler {
 					break;
 
 				case 'BUNDLE_END':
+					if (event.result.getTimings != null) {
+						printTimings(event.result.getTimings());
+					}
 					cb(null, new RollupResult(Date.now() - this._start, this, sourcemap));
 					break;
 
