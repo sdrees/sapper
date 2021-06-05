@@ -4,9 +4,9 @@ title: Introduction
 
 ### Before we begin
 
-> Sapper is in early development, and some things may change before we hit version 1.0. This document is a work-in-progress. If you get stuck, reach out for help in the [Discord chatroom](https://svelte.dev/chat).
+> Sapper's succesor, [SvelteKit](https://kit.svelte.dev), is currently available for use. All development efforts moving forward will be focused on [SvelteKit](https://kit.svelte.dev).
 >
-> See the [migration guides](migrating) for help upgrading from older versions.
+> If you get stuck, reach out for help in the [Discord chatroom](https://svelte.dev/chat). See the [migration guides](migrating) for help upgrading from older versions.
 
 ### What is Sapper?
 
